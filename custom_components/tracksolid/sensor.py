@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -15,6 +15,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfSpeed
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .const import CONF_IMEIS, COORDINATOR, DOMAIN
 from .coordinator import TracksolidCoordinator
@@ -103,12 +104,12 @@ async def async_setup_entry(
 
 
 def _parse_tracksolid_datetime(value: Any) -> datetime | None:
-    """Parse a naive 'YYYY-MM-DD HH:MM:SS' string from the API as UTC."""
+    """Parse a naive 'YYYY-MM-DD HH:MM:SS' string using the HA-configured timezone."""
     if not value:
         return None
     try:
         return datetime.strptime(str(value), "%Y-%m-%d %H:%M:%S").replace(
-            tzinfo=timezone.utc
+            tzinfo=dt_util.DEFAULT_TIME_ZONE
         )
     except ValueError:
         return None
