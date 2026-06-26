@@ -6,7 +6,10 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.components import webhook
+from homeassistant.components.webhook import (
+    async_register as webhook_async_register,
+    async_unregister as webhook_async_unregister,
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import TracksolidApiClient
@@ -50,7 +53,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Register webhook for Tracksolid push notifications (vibration etc.)
     webhook_id = f"{WEBHOOK_ID}_{entry.entry_id}"
-    webhook.async_register(
+    webhook_async_register(
         hass,
         DOMAIN,
         "Tracksolid Push",
@@ -66,7 +69,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     webhook_id = f"{WEBHOOK_ID}_{entry.entry_id}"
-    webhook.async_unregister(hass, webhook_id)
+    webhook_async_unregister(hass, webhook_id)
 
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:

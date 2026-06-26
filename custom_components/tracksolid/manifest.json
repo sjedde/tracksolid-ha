@@ -1,7 +1,7 @@
 {
   "domain": "tracksolid",
   "name": "Tracksolid Pro",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "config_flow": true,
   "documentation": "https://tracksolidprodocs.jimicloud.com",
   "issue_tracker": "",
