@@ -46,6 +46,14 @@ SENSOR_TYPES: tuple[TracksolidSensorDescription, ...] = (
         icon="mdi:longitude",
     ),
     TracksolidSensorDescription(
+        key="distance",
+        name="Distance Today",
+        data_key="distance",
+        native_unit_of_measurement="km",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        icon="mdi:map-marker-distance",
+    ),
+    TracksolidSensorDescription(
         key="speed",
         name="Speed",
         data_key="speed",
