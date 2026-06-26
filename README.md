@@ -51,8 +51,9 @@ Track your motorbike (or any Tracksolid Pro asset) in Home Assistant.
 5. Select which devices you want to track
 6. Set the polling interval (default: 30 s)
 
-> **How authentication works:** The integration uses Tracksolid's API v0.9 which authenticates with
-> your username and password directly. No separate developer key registration is required.
+> **How authentication works:** The integration uses the platform credentials published in the
+> Tracksolid Pro API documentation. Users only need their own account email and password —
+> no separate developer key registration is required.
 
 ## Push Notifications (Vibration Alerts)
 
@@ -134,6 +135,6 @@ action:
 ## Troubleshooting
 
 - **"cannot_connect"** — verify the region matches your Tracksolid account's server.
-- **"invalid_auth"** — double-check app_key, app_secret, username, and password. Note that the password is MD5-hashed before sending.
+- **"invalid_auth"** — double-check your email and password.
 - **No location updates** — ensure the device has GPS coverage and the IMEI is correct.
 - **Webhook not receiving pushes** — confirm your HA instance is externally reachable and the push URL is configured correctly in the Tracksolid portal.
