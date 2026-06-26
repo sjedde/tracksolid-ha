@@ -96,24 +96,14 @@ class TracksolidApiClient:
         """Log in and store the JWT Bearer token."""
         md5_password = hashlib.md5(self._password.encode()).hexdigest()
         _LOGGER.debug("Logging in to Tracksolid Pro as %s", self._username)
-
-        # Try MD5-hashed password first (as seen in the web app HAR).
-        # Some accounts/regions may expect plaintext — fall back if denied.
-        for password_attempt in (md5_password, self._password):
-            payload = {
-                "account": self._username,
-                "password": password_attempt,
-                "language": "en",
-                "validCode": "",
-                "nodeId": "",
-            }
-            try:
-                data = await self._async_post(ENDPOINT_LOGIN, payload, authenticated=False)
-                break  # success
-            except TracksolidAuthError:
-                if password_attempt is self._password:
-                    raise  # both attempts failed
-                _LOGGER.debug("MD5 password rejected, retrying with plaintext")
+        payload = {
+            "account": self._username,
+            "password": md5_password,
+            "language": "en",
+            "validCode": "",
+            "nodeId": "",
+        }
+        data = await self._async_post(ENDPOINT_LOGIN, payload, authenticated=False)
 
         token = data.get("token")
         if not token:
