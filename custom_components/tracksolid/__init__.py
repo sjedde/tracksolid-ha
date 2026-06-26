@@ -12,7 +12,6 @@ from .api import TracksolidApiClient
 from .const import (
     CONF_IMEIS,
     CONF_PASSWORD,
-    CONF_REGION,
     CONF_SCAN_INTERVAL,
     CONF_USERNAME,
     COORDINATOR,
@@ -35,7 +34,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     client = TracksolidApiClient(
         username=entry.data[CONF_USERNAME],
         password=entry.data[CONF_PASSWORD],
-        region=entry.data[CONF_REGION],
         session=session,
     )
 
@@ -49,7 +47,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         COORDINATOR: coordinator,
     }
 
-    # Register a webhook so Tracksolid can push alarm events (e.g. vibration) to HA.
+    # Register webhook for Tracksolid push notifications (vibration etc.)
     webhook_id = f"{WEBHOOK_ID}_{entry.entry_id}"
     hass.components.webhook.async_register(
         DOMAIN,

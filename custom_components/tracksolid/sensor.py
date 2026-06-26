@@ -1,7 +1,7 @@
 """Sensor platform for Tracksolid Pro."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -11,10 +11,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    PERCENTAGE,
-    UnitOfSpeed,
-)
+from homeassistant.const import UnitOfSpeed
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -24,15 +21,13 @@ from .entity import TracksolidEntity
 
 
 @dataclass(frozen=True)
-class TracksolidSensorEntityDescription(SensorEntityDescription):
-    """Describes a Tracksolid sensor."""
-
+class TracksolidSensorDescription(SensorEntityDescription):
+    """Extends SensorEntityDescription with a data key."""
     data_key: str = ""
-    data_key_alt: str = ""
 
 
-SENSOR_TYPES: tuple[TracksolidSensorEntityDescription, ...] = (
-    TracksolidSensorEntityDescription(
+SENSOR_TYPES: tuple[TracksolidSensorDescription, ...] = (
+    TracksolidSensorDescription(
         key="speed",
         name="Speed",
         data_key="speed",
@@ -41,39 +36,32 @@ SENSOR_TYPES: tuple[TracksolidSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:speedometer",
     ),
-    TracksolidSensorEntityDescription(
-        key="battery",
-        name="Battery",
-        data_key="battery",
-        data_key_alt="batteryLevel",
-        native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.BATTERY,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-    TracksolidSensorEntityDescription(
+    TracksolidSensorDescription(
         key="satellites",
         name="Satellites",
-        data_key="satellites",
-        data_key_alt="sat",
+        data_key="gpsNum",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:satellite-variant",
     ),
-    TracksolidSensorEntityDescription(
-        key="signal",
-        name="Signal",
-        data_key="gsm",
-        data_key_alt="gsmSignal",
-        native_unit_of_measurement=PERCENTAGE,
+    TracksolidSensorDescription(
+        key="gps_signal",
+        name="GPS Signal",
+        data_key="GPSSignal",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:signal",
     ),
-    TracksolidSensorEntityDescription(
-        key="last_update",
-        name="Last Update",
+    TracksolidSensorDescription(
+        key="gps_time",
+        name="Last GPS Fix",
         data_key="gpsTime",
-        data_key_alt="lastTime",
         device_class=SensorDeviceClass.TIMESTAMP,
         icon="mdi:clock-outline",
+    ),
+    TracksolidSensorDescription(
+        key="status",
+        name="Status",
+        data_key="status",
+        icon="mdi:motorbike",
     ),
 )
 
@@ -86,22 +74,22 @@ async def async_setup_entry(
     coordinator: TracksolidCoordinator = hass.data[DOMAIN][entry.entry_id][COORDINATOR]
     imeis: list[str] = entry.data[CONF_IMEIS]
     async_add_entities(
-        TracksolidSensor(coordinator, imei, description)
+        TracksolidSensor(coordinator, imei, desc)
         for imei in imeis
-        for description in SENSOR_TYPES
+        for desc in SENSOR_TYPES
     )
 
 
 class TracksolidSensor(TracksolidEntity, SensorEntity):
-    """A sensor reading from a Tracksolid device."""
+    """A sensor for a Tracksolid device."""
 
-    entity_description: TracksolidSensorEntityDescription
+    entity_description: TracksolidSensorDescription
 
     def __init__(
         self,
         coordinator: TracksolidCoordinator,
         imei: str,
-        description: TracksolidSensorEntityDescription,
+        description: TracksolidSensorDescription,
     ) -> None:
         super().__init__(coordinator, imei)
         self.entity_description = description
@@ -109,10 +97,7 @@ class TracksolidSensor(TracksolidEntity, SensorEntity):
 
     @property
     def native_value(self) -> Any:
-        data = self._device_data
-        value = data.get(self.entity_description.data_key)
-        if value is None and self.entity_description.data_key_alt:
-            value = data.get(self.entity_description.data_key_alt)
+        value = self._device_data.get(self.entity_description.data_key)
         if value is None:
             return None
 
@@ -123,4 +108,4 @@ class TracksolidSensor(TracksolidEntity, SensorEntity):
         try:
             return float(value)
         except (ValueError, TypeError):
-            return value
+            return str(value) if value else None

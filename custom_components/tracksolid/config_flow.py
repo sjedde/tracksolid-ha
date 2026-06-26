@@ -22,43 +22,24 @@ from homeassistant.helpers.selector import (
 
 from .api import TracksolidApiClient, TracksolidApiError, TracksolidAuthError
 from .const import (
-    CONF_APP_KEY,
-    CONF_APP_SECRET,
     CONF_IMEIS,
     CONF_PASSWORD,
-    CONF_REGION,
     CONF_SCAN_INTERVAL,
     CONF_USERNAME,
-    DEFAULT_REGION,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    PLATFORM_APP_KEY,
-    PLATFORM_APP_SECRET,
-    REGION_EU,
-    REGION_HK_SG,
-    REGION_LABELS,
-    REGION_US,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-REGION_OPTIONS = [
-    {"value": REGION_EU, "label": REGION_LABELS[REGION_EU]},
-    {"value": REGION_HK_SG, "label": REGION_LABELS[REGION_HK_SG]},
-    {"value": REGION_US, "label": REGION_LABELS[REGION_US]},
-]
-
 
 async def _try_login(hass, data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Authenticate and return the list of devices on the account."""
+    """Authenticate and return the list of devices."""
     session = async_get_clientsession(hass)
     client = TracksolidApiClient(
         username=data[CONF_USERNAME],
         password=data[CONF_PASSWORD],
-        region=data[CONF_REGION],
         session=session,
-        app_key=data.get(CONF_APP_KEY) or None,
-        app_secret=data.get(CONF_APP_SECRET) or None,
     )
     await client.async_ensure_token()
     return await client.async_get_devices()
@@ -108,23 +89,6 @@ class TracksolidConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_PASSWORD): TextSelector(
                     TextSelectorConfig(type=TextSelectorType.PASSWORD)
                 ),
-                vol.Required(
-                    CONF_REGION,
-                    default=self._user_data.get(CONF_REGION, DEFAULT_REGION),
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=REGION_OPTIONS,
-                        mode=SelectSelectorMode.LIST,
-                    )
-                ),
-                vol.Optional(
-                    CONF_APP_KEY,
-                    description={"suggested_value": self._user_data.get(CONF_APP_KEY, PLATFORM_APP_KEY)},
-                ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
-                vol.Optional(
-                    CONF_APP_SECRET,
-                    description={"suggested_value": self._user_data.get(CONF_APP_SECRET, PLATFORM_APP_SECRET)},
-                ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
             }
         )
 
@@ -144,12 +108,11 @@ class TracksolidConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         device_options = {
-            str(d.get("imei", d.get("devImei", ""))): (
-                f"{d.get('deviceName', d.get('name', 'Unknown'))} "
-                f"({d.get('imei', d.get('devImei', ''))})"
+            str(d.get("imei", "")): (
+                f"{d.get('deviceName', 'Unknown')} ({d.get('imei', '')})"
             )
             for d in self._devices
-            if d.get("imei") or d.get("devImei")
+            if d.get("imei")
         }
 
         if not device_options:

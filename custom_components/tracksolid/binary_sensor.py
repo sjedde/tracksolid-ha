@@ -13,50 +13,41 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import (
-    ALARM_TYPE_IGNITION_ON,
-    ALARM_TYPE_VIBRATION,
-    CONF_IMEIS,
-    COORDINATOR,
-    DOMAIN,
-)
+from .const import CONF_IMEIS, COORDINATOR, DOMAIN, STATUS_MOVING
 from .coordinator import TracksolidCoordinator
 from .entity import TracksolidEntity
 
 
 @dataclass(frozen=True)
-class TracksolidBinarySensorEntityDescription(BinarySensorEntityDescription):
-    """Describes a Tracksolid binary sensor."""
-
+class TracksolidBinarySensorDescription(BinarySensorEntityDescription):
+    """Binary sensor description with a data key."""
     data_key: str = ""
-    data_key_alt: str = ""
     true_value: Any = None
 
 
-BINARY_SENSOR_TYPES: tuple[TracksolidBinarySensorEntityDescription, ...] = (
-    TracksolidBinarySensorEntityDescription(
+BINARY_SENSOR_TYPES: tuple[TracksolidBinarySensorDescription, ...] = (
+    TracksolidBinarySensorDescription(
         key="vibration",
         name="Vibration",
         device_class=BinarySensorDeviceClass.VIBRATION,
         icon="mdi:vibrate",
         data_key="_alarm_vibration",
     ),
-    TracksolidBinarySensorEntityDescription(
+    TracksolidBinarySensorDescription(
         key="ignition",
         name="Ignition",
         device_class=BinarySensorDeviceClass.RUNNING,
         icon="mdi:engine",
-        data_key="accStatus",
-        data_key_alt="ignition",
-        true_value=1,
+        data_key="acc",
+        true_value="1",
     ),
-    TracksolidBinarySensorEntityDescription(
+    TracksolidBinarySensorDescription(
         key="moving",
         name="Moving",
         device_class=BinarySensorDeviceClass.MOTION,
         icon="mdi:motorbike",
-        data_key="deviceStatus",
-        true_value=2,
+        data_key="status",
+        true_value=STATUS_MOVING,
     ),
 )
 
@@ -69,22 +60,22 @@ async def async_setup_entry(
     coordinator: TracksolidCoordinator = hass.data[DOMAIN][entry.entry_id][COORDINATOR]
     imeis: list[str] = entry.data[CONF_IMEIS]
     async_add_entities(
-        TracksolidBinarySensor(coordinator, imei, description)
+        TracksolidBinarySensor(coordinator, imei, desc)
         for imei in imeis
-        for description in BINARY_SENSOR_TYPES
+        for desc in BINARY_SENSOR_TYPES
     )
 
 
 class TracksolidBinarySensor(TracksolidEntity, BinarySensorEntity):
     """Binary sensor for a Tracksolid device."""
 
-    entity_description: TracksolidBinarySensorEntityDescription
+    entity_description: TracksolidBinarySensorDescription
 
     def __init__(
         self,
         coordinator: TracksolidCoordinator,
         imei: str,
-        description: TracksolidBinarySensorEntityDescription,
+        description: TracksolidBinarySensorDescription,
     ) -> None:
         super().__init__(coordinator, imei)
         self.entity_description = description
@@ -104,7 +95,7 @@ class TracksolidBinarySensor(TracksolidEntity, BinarySensorEntity):
         if str(event.data.get("imei")) == self._imei:
             self._vibration_active = True
             self.async_write_ha_state()
-            # Auto-clear vibration state after 60 seconds
+            # Auto-clear after 60 seconds
             self.hass.loop.call_later(60, self._clear_vibration)
 
     def _clear_vibration(self) -> None:
@@ -121,16 +112,10 @@ class TracksolidBinarySensor(TracksolidEntity, BinarySensorEntity):
             return None
 
         value = data.get(self.entity_description.data_key)
-        if value is None and self.entity_description.data_key_alt:
-            value = data.get(self.entity_description.data_key_alt)
-
         if value is None:
             return None
 
         if self.entity_description.true_value is not None:
-            try:
-                return int(value) == self.entity_description.true_value
-            except (ValueError, TypeError):
-                return value == self.entity_description.true_value
+            return str(value) == str(self.entity_description.true_value)
 
         return bool(value)

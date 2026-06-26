@@ -1,24 +1,21 @@
-"""Tracksolid Pro API client."""
+"""Tracksolid Pro API client — uses the web app's own /v3/new/ backend."""
 from __future__ import annotations
 
 import hashlib
 import logging
 import time
-from datetime import datetime, timezone
 from typing import Any
 
 import aiohttp
 
 from .const import (
-    API_VERSION,
-    METHOD_DEVICE_LIST,
-    METHOD_DEVICE_LOCATION,
-    METHOD_TOKEN_GET,
-    METHOD_TOKEN_REFRESH,
-    PLATFORM_APP_KEY,
-    PLATFORM_APP_SECRET,
-    REGION_URLS,
-    TOKEN_REFRESH_THRESHOLD,
+    API_BASE_URL,
+    ENDPOINT_GET_CURRENT_USER,
+    ENDPOINT_GET_DEVICES,
+    ENDPOINT_GET_GROUPS,
+    ENDPOINT_GET_NODE_LIST,
+    ENDPOINT_LOGIN,
+    TOKEN_TTL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,164 +26,211 @@ class TracksolidAuthError(Exception):
 
 
 class TracksolidApiError(Exception):
-    """Raised when the API returns an error."""
+    """Raised when the API returns an unexpected error."""
 
 
 class TracksolidApiClient:
-    """Async client for the Tracksolid Pro Open API."""
+    """Async client for the Tracksolid Pro web API.
+
+    Authenticates with email + MD5(password) and receives a JWT Bearer token.
+    No developer appKey or appSecret required.
+    """
 
     def __init__(
         self,
         username: str,
         password: str,
-        region: str,
         session: aiohttp.ClientSession,
-        app_key: str | None = None,
-        app_secret: str | None = None,
     ) -> None:
         self._username = username
         self._password = password
-        self._base_url = REGION_URLS[region]
         self._session = session
-        self._app_key = app_key or PLATFORM_APP_KEY
-        self._app_secret = app_secret or PLATFORM_APP_SECRET
 
-        self._access_token: str | None = None
-        self._refresh_token: str | None = None
-        self._token_expires_at: float = 0.0
+        self._token: str | None = None
+        self._token_obtained_at: float = 0.0
+        self._user_id: int | None = None
+        self._base_url: str = API_BASE_URL
 
     # ------------------------------------------------------------------
-    # Public helpers
+    # Public API
     # ------------------------------------------------------------------
 
     async def async_ensure_token(self) -> None:
-        """Ensure we have a valid access token, refreshing or obtaining one."""
-        now = time.monotonic()
-        if self._access_token and now < self._token_expires_at:
+        """Ensure we have a valid JWT token, re-authenticating if expired."""
+        if self._token and time.monotonic() - self._token_obtained_at < TOKEN_TTL:
             return
-        if self._refresh_token:
-            await self._async_refresh_token()
-        else:
-            await self._async_get_token()
+        await self._async_login()
 
     async def async_get_devices(self) -> list[dict[str, Any]]:
-        """Return all devices for the account."""
+        """Return all devices with their current location data."""
         await self.async_ensure_token()
-        result = await self._async_request(
-            METHOD_DEVICE_LIST,
-            {"pageIndex": 1, "pageSize": 100},
-        )
-        return result.get("list", [])
 
-    async def async_get_locations(self, imeis: list[str]) -> list[dict[str, Any]]:
-        """Return the latest location for one or more IMEIs."""
-        await self.async_ensure_token()
-        result = await self._async_request(
-            METHOD_DEVICE_LOCATION,
-            {"imeis": ",".join(imeis)},
-        )
+        # Get all organisation groups for this user
+        groups = await self._async_get_groups()
+        if not groups:
+            _LOGGER.warning("No device groups found for account")
+            return []
+
+        devices: list[dict[str, Any]] = []
+        for group in groups:
+            org_id = group.get("id", "")
+            batch = await self._async_get_devices_for_group(org_id)
+            devices.extend(batch)
+
+        # De-duplicate by IMEI in case device appears in multiple groups
+        seen: set[str] = set()
+        unique = []
+        for d in devices:
+            imei = str(d.get("imei", ""))
+            if imei and imei not in seen:
+                seen.add(imei)
+                unique.append(d)
+
+        return unique
+
+    # ------------------------------------------------------------------
+    # Authentication
+    # ------------------------------------------------------------------
+
+    async def _async_login(self) -> None:
+        """Log in and store the JWT Bearer token."""
+        md5_password = hashlib.md5(self._password.encode()).hexdigest()
+        payload = {
+            "account": self._username,
+            "password": md5_password,
+            "language": "en",
+            "validCode": "",
+            "nodeId": "",
+        }
+        _LOGGER.debug("Logging in to Tracksolid Pro as %s", self._username)
+        data = await self._async_post(ENDPOINT_LOGIN, payload, authenticated=False)
+
+        token = data.get("token")
+        if not token:
+            raise TracksolidAuthError("Login succeeded but no token was returned")
+
+        self._token = token
+        self._token_obtained_at = time.monotonic()
+
+        # Decode user ID from JWT payload (no signature validation needed)
+        import base64, json as _json
+        try:
+            parts = token.split(".")
+            padded = parts[1] + "=="
+            jwt_payload = _json.loads(base64.b64decode(padded).decode())
+            self._user_id = int(jwt_payload.get("accountId", 0))
+        except Exception:
+            _LOGGER.warning("Could not decode accountId from JWT")
+
+        # If the server wants us to use a different node, switch to it
+        target_node_id = data.get("targetNodeId")
+        if target_node_id:
+            await self._async_switch_node(target_node_id)
+
+        _LOGGER.debug("Logged in, accountId=%s", self._user_id)
+
+    async def _async_switch_node(self, target_node_id: Any) -> None:
+        """Switch to the correct regional node if login response requests it."""
+        try:
+            nodes = await self._async_post(ENDPOINT_GET_NODE_LIST, {}, authenticated=True)
+            if not isinstance(nodes, list):
+                return
+            for node in nodes:
+                if str(node.get("id")) == str(target_node_id):
+                    outer = node.get("nodeUrlOuter") or node.get("nodeUrl")
+                    if outer:
+                        _LOGGER.info("Switching to regional node: %s", outer)
+                        self._base_url = outer.rstrip("/")
+                        # Re-authenticate against the correct node
+                        self._token = None
+                        await self._async_login()
+                    return
+        except Exception as err:
+            _LOGGER.debug("Node switch failed (non-fatal): %s", err)
+
+    # ------------------------------------------------------------------
+    # Device data
+    # ------------------------------------------------------------------
+
+    async def _async_get_groups(self) -> list[dict[str, Any]]:
+        """Return all device groups for the logged-in user."""
+        body = {
+            "type": "NORMAL",
+            "userId": self._user_id,
+            "userType": 3,
+            "keyword": "",
+            "isNewMcType": "0",
+        }
+        result = await self._async_post(ENDPOINT_GET_GROUPS, body)
         if isinstance(result, list):
             return result
-        return result.get("list", result.get("data", []))
+        return result.get("list", []) if isinstance(result, dict) else []
 
-    # ------------------------------------------------------------------
-    # Token management
-    # ------------------------------------------------------------------
-
-    async def _async_get_token(self) -> None:
-        """Obtain a new access token using username + password."""
-        md5_password = hashlib.md5(self._password.encode()).hexdigest()
-        data = await self._async_request(
-            METHOD_TOKEN_GET,
-            {
-                "user_id": self._username,
-                "user_pwd_md5": md5_password,
-                "expires_in": 7200,
-            },
-            authenticated=False,
-        )
-        self._access_token = data["accessToken"]
-        self._refresh_token = data.get("refreshToken")
-        self._token_expires_at = time.monotonic() + TOKEN_REFRESH_THRESHOLD
-        _LOGGER.debug("Obtained new Tracksolid access token")
-
-    async def _async_refresh_token(self) -> None:
-        """Refresh the access token using the refresh token."""
-        try:
-            data = await self._async_request(
-                METHOD_TOKEN_REFRESH,
-                {"refreshToken": self._refresh_token},
-                authenticated=False,
-            )
-            self._access_token = data["accessToken"]
-            self._refresh_token = data.get("refreshToken", self._refresh_token)
-            self._token_expires_at = time.monotonic() + TOKEN_REFRESH_THRESHOLD
-            _LOGGER.debug("Refreshed Tracksolid access token")
-        except TracksolidApiError:
-            _LOGGER.warning("Token refresh failed, re-authenticating")
-            self._refresh_token = None
-            await self._async_get_token()
-
-    # ------------------------------------------------------------------
-    # Request building & signing
-    # ------------------------------------------------------------------
-
-    def _build_params(
-        self, method: str, extra: dict[str, Any], authenticated: bool
-    ) -> dict[str, Any]:
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        params: dict[str, Any] = {
-            "app_key": self._app_key,
-            "format": "json",
-            "method": method,
-            "sign_method": "md5",
-            "timestamp": timestamp,
-            "v": API_VERSION,
+    async def _async_get_devices_for_group(
+        self, org_id: str
+    ) -> list[dict[str, Any]]:
+        """Return all devices in a group, including current location data."""
+        body = {
+            "imei": "",
+            "startRow": "0",
+            "userType": 3,
+            "userId": self._user_id,
+            "orgId": org_id,
+            "siftType": "",
+            "sortType": "",
+            "sortRule": "",
+            "isNewMcType": "0",
+            "videoEntry": "",
+            "type": "NORMAL",
+            "searchStatus": "ALL",
         }
-        if authenticated and self._access_token:
-            params["access_token"] = self._access_token
-        params.update(extra)
-        params["sign"] = self._sign(params)
-        return params
+        result = await self._async_post(ENDPOINT_GET_DEVICES, body)
+        if isinstance(result, list):
+            return result
+        return result.get("list", []) if isinstance(result, dict) else []
 
-    def _sign(self, params: dict[str, Any]) -> str:
-        """Compute the MD5 signature.
+    # ------------------------------------------------------------------
+    # HTTP helpers
+    # ------------------------------------------------------------------
 
-        Format: md5( appSecret + key1value1key2value2... (alphabetical) + appSecret )
-        Result is a 32-character uppercase hex string.
-        """
-        sorted_str = "".join(
-            f"{k}{v}" for k, v in sorted(params.items()) if v is not None
-        )
-        raw = f"{self._app_secret}{sorted_str}{self._app_secret}"
-        return hashlib.md5(raw.encode("utf-8")).hexdigest().upper()
-
-    async def _async_request(
+    async def _async_post(
         self,
-        method: str,
-        extra: dict[str, Any],
+        endpoint: str,
+        body: dict[str, Any],
         authenticated: bool = True,
-    ) -> dict[str, Any]:
-        params = self._build_params(method, extra, authenticated)
-        _LOGGER.debug("Tracksolid API request: %s", method)
+    ) -> Any:
+        url = f"{self._base_url}{endpoint}"
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if authenticated and self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+
+        _LOGGER.debug("POST %s", endpoint)
         try:
             async with self._session.post(
-                self._base_url, data=params, timeout=aiohttp.ClientTimeout(total=15)
+                url,
+                json=body,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
+                if resp.status == 401:
+                    raise TracksolidAuthError("Received 401 — token expired")
                 resp.raise_for_status()
                 payload = await resp.json(content_type=None)
+        except TracksolidAuthError:
+            raise
         except aiohttp.ClientError as err:
-            raise TracksolidApiError(f"HTTP error calling {method}: {err}") from err
+            raise TracksolidApiError(f"HTTP error on {endpoint}: {err}") from err
 
-        code = str(payload.get("code", ""))
-        message = payload.get("message", "unknown")
-        _LOGGER.debug("Tracksolid API response: code=%s message=%s", code, message)
+        code = payload.get("code")
+        msg = payload.get("msg", payload.get("message", ""))
 
-        if code in ("1001", "1002", "1003"):
-            raise TracksolidAuthError(
-                f"Authentication failed (code {code}): {message}"
-            )
-        if code != "0":
-            raise TracksolidApiError(f"API error {code}: {message}")
+        _LOGGER.debug("Response code=%s msg=%s", code, msg)
 
-        return payload.get("result", payload.get("data", {}))
+        # Both 0 and 10000 mean success in different parts of the API
+        if code in (0, 10000, "0", "10000"):
+            return payload.get("data", payload.get("result", {}))
+
+        if code in (401, 1001, 1002, 1003, "401", "1001", "1002", "1003"):
+            raise TracksolidAuthError(f"Auth error {code}: {msg}")
+
+        raise TracksolidApiError(f"API error {code}: {msg}")

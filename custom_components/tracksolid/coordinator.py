@@ -15,7 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class TracksolidCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Polls Tracksolid for the latest device locations."""
+    """Polls Tracksolid Pro for the latest device locations and status."""
 
     def __init__(
         self,
@@ -31,16 +31,26 @@ class TracksolidCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=scan_interval),
         )
         self._client = client
-        self._imeis = imeis
+        self._imeis = set(imeis)
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch the latest location data for all tracked IMEIs."""
+        """Fetch latest device data, indexed by IMEI."""
         try:
-            locations = await self._client.async_get_locations(self._imeis)
+            devices = await self._client.async_get_devices()
         except TracksolidAuthError as err:
+            # Force re-auth on next call
+            self._client._token = None
             raise UpdateFailed(f"Authentication error: {err}") from err
         except TracksolidApiError as err:
             raise UpdateFailed(f"API error: {err}") from err
 
-        # Index by IMEI for easy lookup
-        return {str(loc.get("imei", loc.get("devImei", ""))): loc for loc in locations}
+        result: dict[str, Any] = {}
+        for device in devices:
+            imei = str(device.get("imei", ""))
+            if not imei:
+                continue
+            # Only track IMEIs the user selected during setup
+            if imei in self._imeis:
+                result[imei] = device
+
+        return result
