@@ -1,7 +1,8 @@
 """Sensor platform for Tracksolid Pro."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -58,10 +59,31 @@ SENSOR_TYPES: tuple[TracksolidSensorDescription, ...] = (
         icon="mdi:clock-outline",
     ),
     TracksolidSensorDescription(
+        key="heartbeat",
+        name="Last Heartbeat",
+        data_key="hbTime",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:heart-pulse",
+    ),
+    TracksolidSensorDescription(
+        key="heading",
+        name="Heading",
+        data_key="direction",
+        native_unit_of_measurement="°",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:compass",
+    ),
+    TracksolidSensorDescription(
         key="status",
         name="Status",
         data_key="status",
         icon="mdi:motorbike",
+    ),
+    TracksolidSensorDescription(
+        key="status_detail",
+        name="Status Detail",
+        data_key="statusStr",
+        icon="mdi:information-outline",
     ),
 )
 
@@ -78,6 +100,18 @@ async def async_setup_entry(
         for imei in imeis
         for desc in SENSOR_TYPES
     )
+
+
+def _parse_tracksolid_datetime(value: Any) -> datetime | None:
+    """Parse a naive 'YYYY-MM-DD HH:MM:SS' string from the API as UTC."""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d %H:%M:%S").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError:
+        return None
 
 
 class TracksolidSensor(TracksolidEntity, SensorEntity):
@@ -97,13 +131,20 @@ class TracksolidSensor(TracksolidEntity, SensorEntity):
 
     @property
     def native_value(self) -> Any:
-        value = self._device_data.get(self.entity_description.data_key)
-        if value is None:
+        data = self._device_data
+        if not data:
             return None
 
+        value = data.get(self.entity_description.data_key)
+
         if self.entity_description.device_class == SensorDeviceClass.TIMESTAMP:
-            from homeassistant.util.dt import parse_datetime
-            return parse_datetime(str(value))
+            return _parse_tracksolid_datetime(value)
+
+        if value is None:
+            # Speed is null when parked — treat as 0
+            if self.entity_description.key == "speed":
+                return 0
+            return None
 
         try:
             return float(value)
