@@ -222,7 +222,7 @@ class TracksolidApiClient:
             ),
         }
         if authenticated and self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
+            headers["Authorization"] = self._token
 
         _LOGGER.debug("POST %s", endpoint)
         try:
