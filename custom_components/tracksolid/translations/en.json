@@ -3,14 +3,18 @@
     "step": {
       "user": {
         "title": "Log in to Tracksolid Pro",
-        "description": "Sign in with your Tracksolid Pro account credentials. No API key registration is required — just use the same email and password you use in the Tracksolid Pro app.",
+        "description": "Enter your Tracksolid Pro account email and password. The App Key and App Secret are pre-filled with the platform defaults — only change them if login fails and you have obtained your own credentials from Tracksolid support.",
         "data": {
           "username": "Email address",
           "password": "Password",
-          "region": "Server region"
+          "region": "Server region",
+          "app_key": "App Key (optional)",
+          "app_secret": "App Secret (optional)"
         },
         "data_description": {
-          "region": "Choose the region that matches your Tracksolid Pro account. If unsure, try Europe first."
+          "region": "Choose the region that matches your Tracksolid Pro account. If unsure, try Europe first.",
+          "app_key": "Leave as-is unless the default does not work. Contact Tracksolid support to obtain your own.",
+          "app_secret": "Leave as-is unless the default does not work."
         }
       },
       "devices": {
@@ -23,7 +27,7 @@
       }
     },
     "error": {
-      "invalid_auth": "Incorrect email or password. Please check your credentials.",
+      "invalid_auth": "Login failed. Check your email, password, and region. If those are correct, the default App Key may not work for your account — try obtaining your own from Tracksolid Pro support.",
       "cannot_connect": "Could not reach the Tracksolid Pro server. Check your region selection and internet connection.",
       "no_devices": "No devices found for this account.",
       "no_devices_selected": "Please select at least one device.",

@@ -33,11 +33,7 @@ class TracksolidApiError(Exception):
 
 
 class TracksolidApiClient:
-    """Async client for the Tracksolid Pro Open API.
-
-    Uses the platform app_key and app_secret published in the official docs.
-    Users authenticate with their own Tracksolid username and password only.
-    """
+    """Async client for the Tracksolid Pro Open API."""
 
     def __init__(
         self,
@@ -45,11 +41,15 @@ class TracksolidApiClient:
         password: str,
         region: str,
         session: aiohttp.ClientSession,
+        app_key: str | None = None,
+        app_secret: str | None = None,
     ) -> None:
         self._username = username
         self._password = password
         self._base_url = REGION_URLS[region]
         self._session = session
+        self._app_key = app_key or PLATFORM_APP_KEY
+        self._app_secret = app_secret or PLATFORM_APP_SECRET
 
         self._access_token: str | None = None
         self._refresh_token: str | None = None
@@ -136,7 +136,7 @@ class TracksolidApiClient:
     ) -> dict[str, Any]:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         params: dict[str, Any] = {
-            "app_key": PLATFORM_APP_KEY,
+            "app_key": self._app_key,
             "format": "json",
             "method": method,
             "sign_method": "md5",
@@ -146,21 +146,19 @@ class TracksolidApiClient:
         if authenticated and self._access_token:
             params["access_token"] = self._access_token
         params.update(extra)
-        # sign is computed over all params EXCEPT sign itself, then appended
         params["sign"] = self._sign(params)
         return params
 
     def _sign(self, params: dict[str, Any]) -> str:
         """Compute the MD5 signature.
 
-        Format per docs:
-          md5( appSecret + key1value1key2value2... (alphabetical) + appSecret )
+        Format: md5( appSecret + key1value1key2value2... (alphabetical) + appSecret )
         Result is a 32-character uppercase hex string.
         """
         sorted_str = "".join(
             f"{k}{v}" for k, v in sorted(params.items()) if v is not None
         )
-        raw = f"{PLATFORM_APP_SECRET}{sorted_str}{PLATFORM_APP_SECRET}"
+        raw = f"{self._app_secret}{sorted_str}{self._app_secret}"
         return hashlib.md5(raw.encode("utf-8")).hexdigest().upper()
 
     async def _async_request(
@@ -180,14 +178,15 @@ class TracksolidApiClient:
         except aiohttp.ClientError as err:
             raise TracksolidApiError(f"HTTP error calling {method}: {err}") from err
 
-        code = payload.get("code")
-        if str(code) in ("1001", "1002"):
+        code = str(payload.get("code", ""))
+        message = payload.get("message", "unknown")
+        _LOGGER.debug("Tracksolid API response: code=%s message=%s", code, message)
+
+        if code in ("1001", "1002", "1003"):
             raise TracksolidAuthError(
-                f"Authentication failed (code {code}): {payload.get('message', '')}"
+                f"Authentication failed (code {code}): {message}"
             )
-        if str(code) != "0":
-            raise TracksolidApiError(
-                f"API error {code}: {payload.get('message', 'unknown')}"
-            )
+        if code != "0":
+            raise TracksolidApiError(f"API error {code}: {message}")
 
         return payload.get("result", payload.get("data", {}))
