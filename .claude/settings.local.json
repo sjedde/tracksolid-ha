@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:tracksolidprodocs.jimicloud.com)",
+      "WebFetch(domain:www.tracksolidpro.com)",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}
