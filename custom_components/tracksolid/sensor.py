@@ -30,6 +30,22 @@ class TracksolidSensorDescription(SensorEntityDescription):
 
 SENSOR_TYPES: tuple[TracksolidSensorDescription, ...] = (
     TracksolidSensorDescription(
+        key="latitude",
+        name="Latitude",
+        data_key="lat",
+        native_unit_of_measurement="°",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:latitude",
+    ),
+    TracksolidSensorDescription(
+        key="longitude",
+        name="Longitude",
+        data_key="lng",
+        native_unit_of_measurement="°",
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:longitude",
+    ),
+    TracksolidSensorDescription(
         key="speed",
         name="Speed",
         data_key="speed",
