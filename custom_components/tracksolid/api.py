@@ -210,7 +210,17 @@ class TracksolidApiClient:
         authenticated: bool = True,
     ) -> Any:
         url = f"{self._base_url}{endpoint}"
-        headers: dict[str, str] = {"Content-Type": "application/json"}
+        headers: dict[str, str] = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://www.tracksolidpro.com",
+            "Referer": "https://www.tracksolidpro.com/",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+        }
         if authenticated and self._token:
             headers["Authorization"] = f"Bearer {self._token}"
 
@@ -222,6 +232,7 @@ class TracksolidApiClient:
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
+                _LOGGER.debug("Response HTTP %s from %s", resp.status, endpoint)
                 if resp.status == 401:
                     raise TracksolidAuthError("Received 401 — token expired")
                 resp.raise_for_status()
@@ -234,7 +245,7 @@ class TracksolidApiClient:
         code = payload.get("code")
         msg = payload.get("msg", payload.get("message", ""))
 
-        _LOGGER.debug("Response code=%s msg=%s", code, msg)
+        _LOGGER.debug("Response code=%s msg=%s payload=%s", code, msg, payload)
 
         # Both 0 and 10000 mean success in different parts of the API
         if code in (0, 10000, "0", "10000"):
