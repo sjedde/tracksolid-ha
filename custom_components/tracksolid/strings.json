@@ -25,6 +25,16 @@
       "no_devices_selected": "Please select at least one device.",
       "unknown": "An unexpected error occurred. Check the Home Assistant logs for details."
     },
+    "options": {
+      "step": {
+        "init": {
+          "title": "Tracksolid Pro options",
+          "data": {
+            "scan_interval": "Location update interval (seconds)"
+          }
+        }
+      }
+    },
     "abort": {
       "already_configured": "Tracksolid Pro is already configured."
     }

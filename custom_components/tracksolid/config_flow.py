@@ -45,10 +45,40 @@ async def _try_login(hass, data: dict[str, Any]) -> list[dict[str, Any]]:
     return await client.async_get_devices()
 
 
+class TracksolidOptionsFlow(config_entries.OptionsFlow):
+    """Allow changing the poll interval after setup."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        current = self.config_entry.options.get(
+            CONF_SCAN_INTERVAL,
+            self.config_entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+        )
+
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_SCAN_INTERVAL, default=int(current)): NumberSelector(
+                    NumberSelectorConfig(
+                        min=10, max=300, step=5, mode=NumberSelectorMode.SLIDER
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)
+
+
 class TracksolidConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle the Tracksolid Pro config flow."""
 
     VERSION = 1
+
+    @staticmethod
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> TracksolidOptionsFlow:
+        return TracksolidOptionsFlow()
 
     def __init__(self) -> None:
         self._user_data: dict[str, Any] = {}

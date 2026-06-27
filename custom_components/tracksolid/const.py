@@ -18,7 +18,7 @@ ENDPOINT_GET_DEVICES = "/v3/new/newEquipment/queryEquipmentList"
 ENDPOINT_GET_CURRENT_USER = "/v3/new/account/current"
 ENDPOINT_GET_NODE_LIST = "/v3/new/newDevice/getNodeList"
 
-DEFAULT_SCAN_INTERVAL = 30  # seconds
+DEFAULT_SCAN_INTERVAL = 60  # seconds
 
 # Token assumed valid for 23 h; re-auth proactively before server expires it
 TOKEN_TTL = 23 * 3600
